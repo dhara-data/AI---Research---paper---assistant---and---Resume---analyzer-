@@ -3,7 +3,23 @@ import fitz
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-import ollama
+import groq import Groq
+
+# ==================================================
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+GROQ_MODEL = "llama-3.1-8b-instant"  # fast + free tier. Use "llama-3.3-70b-versatile" for higher quality.
+
+
+def ask_groq(system_prompt, user_prompt):
+    """Helper to call Groq chat completion and return plain text."""
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
+    return response.choices[0].message.content
 
 
 # -----------------------------
