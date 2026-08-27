@@ -3,6 +3,6 @@ PyMuPDF
 sentence-transformers
 faiss-cpu
 numpy
-ollama
+groq
 torch
 transformers
