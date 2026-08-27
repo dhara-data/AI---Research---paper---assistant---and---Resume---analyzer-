@@ -6,6 +6,8 @@ import numpy as np
 from groq import Groq
 
 # ==================================================
+# GROQ CLIENT SETUP
+# ==================================================
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 GROQ_MODEL = "llama-3.1-8b-instant"  # fast + free tier. Use "llama-3.3-70b-versatile" for higher quality.
 
@@ -22,30 +24,17 @@ def ask_groq(system_prompt, user_prompt):
     return response.choices[0].message.content
 
 
-# -----------------------------
-# Function to Extract PDF Text
-# -----------------------------
 def extract_pdf_text(uploaded_file):
     pdf = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-
     text = ""
-
     for page in pdf:
         text += page.get_text()
-
     pdf.close()
-
     return text
 
 
-# -----------------------------
-# Title
-# -----------------------------
 st.title("📚 AI Research Paper Assistant")
 
-# -----------------------------
-# Sidebar
-# -----------------------------
 feature = st.sidebar.radio(
     "Choose a Feature",
     [
@@ -54,86 +43,56 @@ feature = st.sidebar.radio(
     ]
 )
 
+# ==================================================
+# RESEARCH PAPER ASSISTANT
+# ==================================================
 if feature == "📚 Research Paper Assistant":
 
-    uploaded_file = st.file_uploader(
-        "Upload Research Paper (PDF)",
-        type="pdf"
-    )
+    uploaded_file = st.file_uploader("Upload Research Paper (PDF)", type="pdf")
 
     if uploaded_file is not None:
 
-        # Extract text
+        # Read PDF
         text = extract_pdf_text(uploaded_file)
 
-        if not text.strip():
-            st.error("Could not extract text from PDF.")
-            st.stop()
-
-        # Split into chunks
+        # Split text into chunks
         chunk_size = 500
         chunks = []
-
         for i in range(0, len(text), chunk_size):
             chunks.append(text[i:i + chunk_size])
 
         st.success("PDF uploaded successfully!")
 
-        # Load embedding model
-        embedding_model = SentenceTransformer(
-            "all-MiniLM-L6-v2"
-        )
+        # Load Embedding Model
+        embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-        # Create embeddings
+        # Create Embeddings
         embeddings = embedding_model.encode(chunks)
+        embedding_array = np.array(embeddings).astype("float32")
 
-        embedding_array = np.array(
-            embeddings
-        ).astype("float32")
-
-        # Create FAISS index
-        index = faiss.IndexFlatL2(
-            embedding_array.shape[1]
-        )
-
+        # Create FAISS Index
+        index = faiss.IndexFlatL2(embedding_array.shape[1])
         index.add(embedding_array)
 
         st.success("FAISS Index Created Successfully!")
 
-        # Ask Question
-        question = st.text_input(
-            "Ask a question about the research paper"
-        )
+        # ------------------------------------------
+        # ASK A QUESTION
+        # ------------------------------------------
+        question = st.text_input("Ask a question about the research paper")
 
         if question:
+            question_embedding = embedding_model.encode([question]).astype("float32")
+            distances, indices = index.search(question_embedding, k=1)
+            best_chunk = chunks[indices[0][0]]
 
-            question_embedding = embedding_model.encode(
-                [question]
-            ).astype("float32")
+            st.subheader("Most Relevant Chunk")
+            st.write(best_chunk)
 
-            distances, indices = index.search(
-                question_embedding,
-                k=1
-            )
-
-            best_chunk = chunks[
-                indices[0][0]
-            ]
-
-            response = ollama.chat(
-
-                model="phi3",
-
-                messages=[
-
-                    {
-                        "role": "system",
-                        "content": "You are a helpful AI Research Paper Assistant. Answer in simple English."
-                    },
-
-                    {
-                        "role": "user",
-                        "content": f"""
+            with st.spinner("Thinking..."):
+                answer = ask_groq(
+                    system_prompt="You are a helpful AI Research Paper Assistant. Answer in simple English.",
+                    user_prompt=f"""
 Research Paper:
 
 {best_chunk}
@@ -142,180 +101,224 @@ Question:
 
 {question}
 
-Answer in simple English.
+Answer in simple language so that even a beginner can understand.
 """
-                    }
-
-                ]
-            )
-
-            st.subheader("Answer")
-            st.write(
-                response["message"]["content"]
-            )
-            
-
-
-        st.divider()
-
-        if st.button("📝 Generate Summary"):
-
-            with st.spinner("Generating summary..."):
-
-                summary = ollama.chat(
-
-                    model="phi3",
-
-                    messages=[
-
-                        {
-                            "role": "system",
-                            "content": "Summarize research papers in simple English."
-                        },
-
-                        {
-                            "role": "user",
-                            "content": f"""
-Summarize this research paper.
-
-{text[:12000]}
-"""
-                        }
-
-                    ]
                 )
 
-            st.subheader("Research Paper Summary")
-            st.write(summary["message"]["content"])
-
-
-# ==================================================
-# KEY POINTS
-# ==================================================
+            st.subheader("Answer")
+            st.write(answer)
 
         st.divider()
 
-        if st.button("📌 Extract Key Points"):
+        # ------------------------------------------
+        # SUMMARY
+        # ------------------------------------------
+        st.subheader("📝 Research Paper Summary")
 
-            with st.spinner("Extracting key points..."):
+        if st.button("Generate Summary"):
+            summary_text = text[:12000]
 
-                keypoints = ollama.chat(
+            with st.spinner("Generating summary..."):
+                summary = ask_groq(
+                    system_prompt="You summarize academic research papers in simple English.",
+                    user_prompt=f"""
+Summarize the following research paper.
 
-                    model="phi3",
+Include:
 
-                    messages=[
+1. Research objective
+2. Problem being solved
+3. Methodology
+4. Dataset
+5. Main findings
+6. Results
+7. Limitations
+8. Conclusion
 
-                        {
-                            "role": "system",
-                            "content": "Extract the important points from research papers."
-                        },
-
-                        {
-                            "role": "user",
-                            "content": f"""
-Read the research paper and provide:
-
-* Research Objective
-
-* Problem Statement
-
-* Methodology
-
-* Dataset
-
-* Findings
-
-* Results
-
-* Limitations
-
-* Conclusion
+Use simple English.
 
 Research Paper:
 
-{text[:12000]}
+{summary_text}
 """
-                        }
-
-                    ]
                 )
 
-            st.subheader("Key Points")
-            st.write(keypoints["message"]["content"])
+            st.write(summary)
+
+        # ------------------------------------------
+        # KEY POINTS
+        # ------------------------------------------
+        st.divider()
+        st.subheader("📌 Key Points")
+
+        if st.button("Extract Key Points"):
+            key_points_text = text[:12000]
+
+            with st.spinner("Extracting key points..."):
+                key_points = ask_groq(
+                    system_prompt="""
+You are an academic research assistant.
+
+Extract the most important information
+from research papers.
+""",
+                    user_prompt=f"""
+Read the following research paper
+and extract its key points.
+
+Organize the answer into:
+
+📌 Research Objective
+
+📌 Problem Statement
+
+📌 Methodology
+
+📌 Dataset
+
+📌 Important Findings
+
+📌 Results
+
+📌 Limitations
+
+📌 Conclusion
+
+Use bullet points and simple English.
+
+Research Paper:
+
+{key_points_text}
+"""
+                )
+
+            st.write(key_points)
 
 
 # ==================================================
 # RESUME ANALYZER
 # ==================================================
-
 elif feature == "📋 Resume Analyzer":
 
     st.header("📋 AI Resume Analyzer")
 
-    resume_file = st.file_uploader(
-        "Upload Resume (PDF)",
-        type="pdf"
+    st.write(
+        "Upload your resume and compare it with "
+        "the requirements of your target job."
     )
+
+    resume_file = st.file_uploader("Upload Resume (PDF)", type="pdf")
 
     job_role = st.text_input(
-        "Enter Target Job Role"
+        "🎯 Enter Target Job Role",
+        placeholder="Example: Data Scientist"
     )
 
-    if resume_file is not None and st.button("Analyze Resume"):
+    job_description = st.text_area(
+        "📄 Paste Job Description",
+        placeholder="""
+Paste the job description here.
 
-        resume_text = extract_pdf_text(resume_file)
+Example:
 
-        with st.spinner("Analyzing Resume..."):
-
-            analysis = ollama.chat(
-
-                model="phi3",
-
-                messages=[
-
-                    {
-                        "role": "system",
-                        "content": """
-You are an expert Resume Analyzer.
-
-Analyze the resume and provide:
-
-1. Skills Present
-
-2. Missing Skills
-
-3. Missing Projects
-
-4. Missing Achievements
-
-5. Resume Weaknesses
-
-6. Resume Score out of 100
-
-7. Recommendations to improve the resume.
-
-Use simple English.
+We are looking for a Data Scientist
+with experience in Python, SQL,
+Machine Learning, Pandas, NumPy,
+Power BI and Statistics.
 """
-                    },
+    )
 
-                    {
-                        "role": "user",
-                        "content": f"""
+    if st.button("🔍 Analyze Resume"):
+
+        if resume_file is None:
+            st.warning("Please upload your resume.")
+            st.stop()
+
+        if not job_role:
+            st.warning("Please enter the target job role.")
+            st.stop()
+
+        with st.spinner("Reading resume..."):
+            resume_text = extract_pdf_text(resume_file)
+
+        if not resume_text.strip():
+            st.error("Could not extract text from resume.")
+            st.stop()
+
+        if job_description.strip():
+            job_info = job_description
+        else:
+            job_info = f"""
 Target Job Role:
 
 {job_role}
 
-Resume:
-
-{resume_text[:12000]}
+Analyze the common requirements,
+skills and qualifications normally
+expected for this role.
 """
-                    }
 
-                ]
+        with st.spinner("AI is analyzing your resume..."):
+            analysis = ask_groq(
+                system_prompt="""
+You are an expert resume and career
+analysis assistant.
+
+Analyze the resume against the
+target job role.
+
+Be honest and practical.
+
+Identify:
+
+1. Skills already present
+2. Missing skills
+3. Missing projects
+4. Missing achievements
+5. Missing experience
+6. Resume weaknesses
+7. Recommended improvements
+
+Use simple English.
+""",
+                user_prompt=f"""
+TARGET JOB:
+
+{job_role}
+
+
+JOB DESCRIPTION:
+
+{job_info}
+
+
+RESUME:
+
+{resume_text[:15000]}
+
+
+Analyze the resume and provide:
+
+## Skills Already Present
+
+## Missing Skills
+
+## Missing Projects
+
+## Missing Achievements
+
+## Missing Experience
+
+## Resume Weaknesses
+
+## Recommended Improvements
+
+## Overall Recommendation
+
+Give practical recommendations
+that the student can actually follow.
+"""
             )
 
-        st.subheader("Resume Analysis")
-
-        st.write(
-            analysis["message"]["content"]
-        )
+        st.subheader("🤖 Resume Analysis")
+        st.write(analysis)
