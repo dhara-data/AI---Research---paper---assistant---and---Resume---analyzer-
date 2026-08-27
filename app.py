@@ -3,7 +3,7 @@ import fitz
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-import groq import Groq
+from groq import Groq
 
 # ==================================================
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
