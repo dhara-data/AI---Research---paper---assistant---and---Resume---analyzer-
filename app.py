@@ -9,7 +9,7 @@ from groq import Groq
 # GROQ CLIENT SETUP
 # ==================================================
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-GROQ_MODEL = "llama-3.1-8b-instant"  # fast + free tier. Use "llama-3.3-70b-versatile" for higher quality.
+GROQ_MODEL = "openai/gpt-oss-20b"  # fast + free tier. Use "llama-3.3-70b-versatile" for higher quality.
 
 
 def ask_groq(system_prompt, user_prompt):
